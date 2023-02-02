@@ -65,15 +65,15 @@ namespace utilIO
             qInfo() << "Error reading overlay file " + fileName;
             return(1);
         }
-        QTextStream in_stream(&file);
+        QTextStream inputStream(&file);
 
         voxelList.clear();
         fVoxel voxel;
         int iLine=1;
         QRegExp rx("[,\\s]");// match a comma or a space
-        while (!in_stream.atEnd())
+        while (!inputStream.atEnd())
         {
-            QString line = in_stream.readLine();
+            QString line = inputStream.readLine();
             QString unCommented = line.left(line.indexOf("#"));
             if ( unCommented.isEmpty() )
                 continue;
@@ -139,16 +139,27 @@ namespace utilIO
     }
 
     QString readTimeTableFile(QString fileName, QStringList &columnNames, dMatrix &table)
-    {   // table[time][column] should be allocated previously
-        // The time length will not change; the column length may change
+    {   // read a file with headers (columnNames) follwed by table entries: table[nRows][nColumns]
         QFile file(fileName);
         if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         {
             QString errorString = "Error attempting to open file " + fileName;
             return errorString;
         }
-        QTextStream in_stream(&file);
-        QString line = in_stream.readLine();
+        QTextStream inputStream(&file);
+        QString line = inputStream.readLine(); // headers
+
+        // Find the number of entries
+        int nLines=0;
+        while ( !inputStream.atEnd() )
+        {
+            QString line = inputStream.readLine();
+            nLines++;
+        }
+        inputStream.seek(0);
+        table.resize(nLines);
+
+        line = inputStream.readLine();
         QString unCommented = line.left(line.indexOf("#"));
         QRegExp rx("[,\\s]");// match a comma or a space
         columnNames = unCommented.split(rx, QString::SkipEmptyParts);
@@ -157,9 +168,9 @@ namespace utilIO
             table[jt].clear();
 
         int iTime = 0;
-        while ( !in_stream.atEnd() )
+        while ( !inputStream.atEnd() )
         {
-            QString line = in_stream.readLine();
+            QString line = inputStream.readLine();
             QString unCommented = line.left(line.indexOf("#"));
             if ( !unCommented.isEmpty() )
             {

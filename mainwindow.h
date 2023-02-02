@@ -7,11 +7,21 @@
 #include "plot.h"
 //#include "qcustomplot.h"
 
+struct fixedParameters
+{
+    double TE1=2.;
+    double TE2=7.;
+    double TRGado=0.5;
+    double Hct=0.4;
+    double timeStepGd=0.8;  // min
+};
+
 struct CommandOptions
 {
-    QString gadoTableFileName;  // positional argument 1
-    QString variableTRFileName; // positional argument 2
-    bool batchMode=false;       // -b
+    QString variableTRFileName;  // positional argument 1
+    QString gadoShortTEFileName; // positional argument 2
+    QString gadoLongTEFileName;  // positional argument 3
+    bool batchMode=false;        // -b
 };
 enum CommandLineParseResult
 {
@@ -22,6 +32,7 @@ enum CommandLineParseResult
 
 class MainWindow : public QMainWindow
 {
+    Q_OBJECT
 private:
     QWidget *_centralWidget;
     QStatusBar *_statusBar;
@@ -29,6 +40,9 @@ private:
     QCheckBox *_checkBoxLesion;
     QCheckBox *_checkBoxContra;
     QCheckBox *_checkBoxSagittal;
+    QRadioButton *_radioRaw;
+    QRadioButton *_radioNorm;
+    QCheckBox *_includeCorrected;
 
     plotData *_plotVariableTr;
     plotData *_plotEchoes;
@@ -43,16 +57,36 @@ private:
     QLabel *_kTransOffset;
 
     CommandOptions _inputOptions;
+    fixedParameters protocolPars;
+    double _temporaryR1 = 0.35;
+
+    QStringList _columnNamesVTR;     // column names
+    QStringList _columnNamesShortTE; // column names
+    QStringList _columnNamesLongTE;  // column names
+
+    dMatrix _tableVTR;     // [time][column]
+    dMatrix _tableShortTE; // [time][column]
+    dMatrix _tableLongTE;  // [time][column]
 
     QHBoxLayout *createTopLayout();
     QHBoxLayout *createBottomLayout();
     QWidget *createPlotWidget();
     CommandLineParseResult parseCommandLine(QStringList commandLine);
     QString reformatStartupHelpText(QString inputText);
+    void readDataFiles();
+    void addCurveToPlot(plotData *plot, QStringList columnNames, dMatrix table, int iColumn);
+    void addCorrectedCurveToPlot(QStringList columnNames, int iColumn, bool convertToDR1);
+    void addKTransPlot();
+    void normalizeToFirstPoint(dVector &vector);
+    dVector computeDeltaR1(int iColumn);
+    double integrate(dVector vector, int iTime);
 
 public:
     MainWindow();
     void readCommandLine();
+
+public slots:
+    void updateGraphs();
 
 private slots:
     void exitApp();

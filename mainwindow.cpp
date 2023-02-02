@@ -1,5 +1,6 @@
 #include <QtWidgets>
 #include "mainwindow.h"
+#include "generalglm.h"
 
 MainWindow::MainWindow()
 {
@@ -45,10 +46,29 @@ QHBoxLayout *MainWindow::createTopLayout()
     _checkBoxLesion   = new QCheckBox("lesion");
     _checkBoxContra   = new QCheckBox("contralateral");
     _checkBoxSagittal = new QCheckBox("sag sinus");
-    auto *radioLayout = new QHBoxLayout();
-    radioLayout->addWidget(_checkBoxLesion);
-    radioLayout->addWidget(_checkBoxContra);
-    radioLayout->addWidget(_checkBoxSagittal);
+    _checkBoxLesion->setChecked(true);
+    _checkBoxContra->setChecked(true);
+    _checkBoxSagittal->setChecked(true);
+
+    _radioRaw  = new QRadioButton("raw");
+    _radioNorm = new QRadioButton("normalized");
+    _includeCorrected = new QCheckBox("corrected S(t)");
+    _radioNorm->setChecked(true);
+
+    auto *radioLayout = new QGridLayout();
+    radioLayout->addWidget(_checkBoxLesion,0,0);
+    radioLayout->addWidget(_checkBoxContra,0,1);
+    radioLayout->addWidget(_checkBoxSagittal,0,2);
+    radioLayout->addWidget(_radioRaw,1,0);
+    radioLayout->addWidget(_radioNorm,1,1);
+    radioLayout->addWidget(_includeCorrected,1,2);
+
+    connect(_checkBoxLesion,   SIGNAL(toggled(bool)), this, SLOT(updateGraphs()));
+    connect(_checkBoxContra,   SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
+    connect(_checkBoxSagittal, SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
+    connect(_radioRaw,         SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
+    connect(_radioNorm,        SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
+    connect(_includeCorrected, SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
 
     auto *radioBox = new QGroupBox("Choose curves");
     radioBox->setLayout(radioLayout);
@@ -136,6 +156,8 @@ void MainWindow::readCommandLine()
     case CommandLineHelpRequested:
         QCoreApplication::exit(0);
     }
+    readDataFiles();
+    updateGraphs();
 }
 
 CommandLineParseResult MainWindow::parseCommandLine(QStringList commandLine)
@@ -158,7 +180,7 @@ CommandLineParseResult MainWindow::parseCommandLine(QStringList commandLine)
     const QCommandLineOption helpOption = parser.addHelpOption();
 
     int numberArguments = commandLine.count();
-    if ( numberArguments < 3 )
+    if ( numberArguments < 4 )   // executable [VTR file] [shortTE file] [longTE file]
             return CommandLineError;
     else
     {
@@ -183,10 +205,11 @@ CommandLineParseResult MainWindow::parseCommandLine(QStringList commandLine)
     if ( parser.isSet(batchOption) )
         _inputOptions.batchMode = true;
 
-    // positional arguments: [variable TR table] [gado table]
+    // positional arguments: [variable TR table] [gado short TE] [gado long TE]
     if ( parser.positionalArguments().size() < 2 ) return CommandLineError;
-    _inputOptions.variableTRFileName = parser.positionalArguments().at(0);
-    _inputOptions.gadoTableFileName  = parser.positionalArguments().at(1);
+    _inputOptions.variableTRFileName  = parser.positionalArguments().at(0);
+    _inputOptions.gadoShortTEFileName = parser.positionalArguments().at(1);
+    _inputOptions.gadoLongTEFileName  = parser.positionalArguments().at(2);
 
     return CommandLineOk;
 }
@@ -215,4 +238,292 @@ QString MainWindow::reformatStartupHelpText(QString inputText)
     }
     outputString = outputString + "\n"; // terminate last line
     return outputString;
+}
+
+void MainWindow::readDataFiles()
+{
+    QString errorString = utilIO::readTimeTableFile(_inputOptions.variableTRFileName, _columnNamesVTR, _tableVTR);
+    if ( !errorString.isEmpty() )
+    {
+        qInfo() << errorString;
+        exit(1);
+    }
+    FUNC_INFO << "VTR columns" << _columnNamesVTR;
+    FUNC_INFO << "nTime" << _tableVTR.size();
+
+    errorString = utilIO::readTimeTableFile(_inputOptions.gadoShortTEFileName, _columnNamesShortTE, _tableShortTE);
+    if ( !errorString.isEmpty() )
+    {
+        qInfo() << errorString;
+        exit(1);
+    }
+    FUNC_INFO << "shortTE columns" << _columnNamesShortTE;
+    FUNC_INFO << "nTime" << _tableShortTE.size();
+
+    errorString = utilIO::readTimeTableFile(_inputOptions.gadoLongTEFileName, _columnNamesLongTE, _tableLongTE);
+    if ( !errorString.isEmpty() )
+    {
+        qInfo() << errorString;
+        exit(1);
+    }
+    FUNC_INFO << "longTE columns" << _columnNamesLongTE;
+    FUNC_INFO << "nTime" << _tableLongTE.size();
+}
+
+void MainWindow::updateGraphs()
+{
+    FUNC_ENTER << _checkBoxLesion->isChecked() << _checkBoxContra->isChecked() << _checkBoxSagittal->isChecked();
+
+    // Variable-TR plot
+    _plotVariableTr->init();
+    _plotVariableTr->setLabelXAxis("TR (sec)");
+    _plotVariableTr->setLabelYAxis("Signal");
+    // columns name: x(0), lesion(1), contra(2), sag(3)
+    if ( _checkBoxLesion->isChecked() )
+    {
+        addCurveToPlot(_plotVariableTr, _columnNamesVTR, _tableVTR, 1);
+        _plotVariableTr->setPointSize(5);
+    }
+    if ( _checkBoxContra->isChecked() )
+    {
+        addCurveToPlot(_plotVariableTr, _columnNamesVTR, _tableVTR, 2);
+        _plotVariableTr->setPointSize(5);
+    }
+    if ( _checkBoxSagittal->isChecked() )
+    {
+        addCurveToPlot(_plotVariableTr, _columnNamesVTR, _tableVTR, 3);
+        _plotVariableTr->setPointSize(5);
+    }
+    _plotVariableTr->conclude(0,true);
+    _plotVariableTr->plotDataAndFit(true);
+
+    // Gd-time series
+    // columns name: x(0), lesion(1), contra(2), sag(3)
+    _plotEchoes->init();
+    _plotEchoes->setLabelXAxis("time");
+    _plotEchoes->setLabelYAxis("Signal (Gd)");
+    if ( _checkBoxLesion->isChecked() )
+    {
+        addCurveToPlot(_plotEchoes, _columnNamesShortTE, _tableShortTE, 1);
+        _plotEchoes->setLineThickness(2); // thick lines for short TE
+        addCurveToPlot(_plotEchoes, _columnNamesLongTE,  _tableLongTE,  1);
+        if ( _includeCorrected->isChecked() )
+        {
+            addCorrectedCurveToPlot(_columnNamesShortTE, 1, false);
+            _plotEchoes->setPointSize(3);
+        }
+    }
+    if ( _checkBoxContra->isChecked() )
+    {
+        addCurveToPlot(_plotEchoes, _columnNamesShortTE, _tableShortTE, 2);
+        _plotEchoes->setLineThickness(2); // thick lines for short TE
+        addCurveToPlot(_plotEchoes, _columnNamesLongTE,  _tableLongTE,  2);
+        if ( _includeCorrected->isChecked() )
+        {
+            addCorrectedCurveToPlot(_columnNamesShortTE, 2, false);
+            _plotEchoes->setPointSize(3);
+        }
+    }
+    if ( _checkBoxSagittal->isChecked() )
+    {
+        addCurveToPlot(_plotEchoes, _columnNamesShortTE, _tableShortTE, 3);
+        _plotEchoes->setLineThickness(2); // thick lines for short TE
+        addCurveToPlot(_plotEchoes, _columnNamesLongTE,  _tableLongTE,  3);
+        if ( _includeCorrected->isChecked() )
+        {
+            addCorrectedCurveToPlot(_columnNamesShortTE, 3, false);
+            _plotEchoes->setPointSize(3);
+        }
+    }
+    _plotEchoes->conclude(0,true);
+    _plotEchoes->plotDataAndFit(true);
+
+    // delta_R1 plot
+    // columns name: x(0), lesion(1), contra(2), sag(3)
+    _plotDeltaR1->init();
+    _plotDeltaR1->setLabelXAxis("time");
+    _plotDeltaR1->setLabelYAxis("Delta_R2 (Gd)");
+    if ( _checkBoxLesion->isChecked() )
+        addCorrectedCurveToPlot(_columnNamesShortTE, 1, true);
+    if ( _checkBoxContra->isChecked() )
+        addCorrectedCurveToPlot(_columnNamesShortTE, 2, true);
+    if ( _checkBoxSagittal->isChecked() )
+        addCorrectedCurveToPlot(_columnNamesShortTE, 3, true);
+    _plotDeltaR1->conclude(0,true);
+    _plotDeltaR1->plotDataAndFit(true);
+
+    // KTrans plot
+    addKTransPlot();
+}
+
+void MainWindow::addCurveToPlot(plotData *plot, QStringList columnNames, dMatrix table, int iColumn)
+{
+    QString columnName = columnNames.at(iColumn);
+    plot->addCurve(0,columnName);
+
+    int nTime = table.size();
+    dVector xTime, ySignal;
+    for (int jt=0; jt<nTime; jt++)
+    {
+        xTime.append(table[jt][0]);
+        ySignal.append(table[jt][iColumn]);
+    }
+    if ( _radioNorm->isChecked() ) normalizeToFirstPoint(ySignal);
+
+    plot->setData(xTime, ySignal);
+    if ( iColumn == 1 )
+        plot->setColor(Qt::blue);  // lesion
+    else if ( iColumn == 2 )
+        plot->setColor(Qt::black); // contra
+    else
+        plot->setColor(Qt::red);   // sag sinus
+}
+
+void MainWindow::addCorrectedCurveToPlot(QStringList columnNames, int iColumn, bool convertToDR1)
+{
+    plotData *plot;
+    if ( convertToDR1 )
+        plot = _plotDeltaR1;
+    else
+        plot = _plotEchoes;
+
+    QString columnName = columnNames.at(iColumn);
+    plot->addCurve(0,columnName);
+
+    int nTime = _tableShortTE.size();
+    dVector xTime, yCorrected;
+    double exponent = protocolPars.TE1 / (protocolPars.TE2 - protocolPars.TE1);
+    for (int jt=0; jt<nTime; jt++)
+    {
+        xTime.append(_tableShortTE[jt][0]);
+        double y = _tableShortTE[jt][iColumn] * qPow(_tableShortTE[jt][iColumn]/_tableLongTE[jt][iColumn],exponent);
+        yCorrected.append(y);
+    }
+
+    if ( _radioNorm->isChecked() || convertToDR1 ) normalizeToFirstPoint(yCorrected);
+
+    if ( convertToDR1 )
+    {
+        // Convert from normalized signal to delta_R1
+        for (int jt=0; jt<nTime; jt++)
+            yCorrected[jt] *= ( 1. * qExp(_temporaryR1 * protocolPars.TRGado) ) / protocolPars.TRGado;
+    }
+
+    plot->setData(xTime, yCorrected);
+    if ( iColumn == 1 )
+        plot->setColor(Qt::blue);  // lesion
+    else if ( iColumn == 2 )
+        plot->setColor(Qt::black); // contra
+    else
+        plot->setColor(Qt::red);   // sag sinus
+}
+
+void MainWindow::addKTransPlot()
+{
+    _plotKTrans->init();
+    _plotKTrans->setLabelXAxis("time");
+    _plotKTrans->setLabelYAxis("unitless");
+
+    // columns: x(0), lesion(1), contra(2), sag(3)
+    dVector DR1_lesion = computeDeltaR1(1);
+    dVector DR1_contra = computeDeltaR1(2);
+    dVector DR1_plasma = computeDeltaR1(3);
+
+    FUNC_INFO << "DR1_lesion" << DR1_lesion;
+    FUNC_INFO << "DR1_contra" << DR1_contra;
+    FUNC_INFO << "DR1_plasma" << DR1_plasma;
+
+    dVector xTime, yLesionUnitless, yContraUnitLess;
+    int nTime = _tableShortTE.size();
+    int lowCutoff=2;
+    for (int jt=0; jt<nTime; jt++)
+    {
+        if ( jt > lowCutoff )
+        {
+            double x = integrate(DR1_plasma,jt) / DR1_plasma[jt];
+            xTime.append(x);
+            double y = (1.-protocolPars.Hct) * DR1_lesion[jt] / DR1_plasma[jt];
+            yLesionUnitless.append(y);
+            y = (1.-protocolPars.Hct) * DR1_plasma[jt] / DR1_plasma[jt];
+            yContraUnitLess.append(y);
+        }
+    }
+    FUNC_INFO << "lesion" << xTime << yLesionUnitless;
+    FUNC_INFO << "contra" << xTime << yContraUnitLess;
+
+    if ( _checkBoxLesion->isChecked() )
+    {
+        _plotKTrans->addCurve(0,_columnNamesShortTE.at(1));
+        _plotKTrans->setData(xTime, yLesionUnitless);
+        _plotKTrans->setColor(Qt::blue);  // lesion
+        _plotKTrans->setLineThickness(0);
+        _plotKTrans->setPointSize(5);
+        // fit
+        SimplePolynomial poly;
+        poly.define(2,xTime);
+        poly.fitWLS(yLesionUnitless,true);
+        dVector fit = poly.getFitAll();
+        qInfo() << "lesion fit" << poly.getBeta(0) << poly.getBeta(1);
+        _plotKTrans->addCurve(0,"fit");
+        _plotKTrans->setData(xTime, fit);
+        _plotKTrans->setColor(Qt::blue);  // lesion
+        _plotKTrans->setLineThickness(2);
+    }
+
+    if ( _checkBoxContra->isChecked() )
+    {
+        _plotKTrans->addCurve(0,_columnNamesShortTE.at(2));
+        _plotKTrans->setData(xTime, yContraUnitLess);
+        _plotKTrans->setColor(Qt::black);  // contra
+        _plotKTrans->setLineThickness(0);
+        _plotKTrans->setPointSize(5);
+        // fit
+        SimplePolynomial poly;
+        poly.define(2,xTime);
+        poly.fitWLS(yContraUnitLess,true);
+        dVector fit = poly.getFitAll();
+        qInfo() << "contra fit" << poly.getBeta(0) << poly.getBeta(1);
+        _plotKTrans->addCurve(0,"fit");
+        _plotKTrans->setData(xTime, fit);
+        _plotKTrans->setColor(Qt::black);  // lesion
+        _plotKTrans->setLineThickness(2);
+    }
+
+    _plotKTrans->conclude(0,true);
+    _plotKTrans->plotDataAndFit(true);
+}
+
+void MainWindow::normalizeToFirstPoint(dVector &vector)
+{
+    double S0  = vector.at(0);
+    for (int jt=0; jt<vector.size(); jt++)
+        vector[jt] = (vector[jt])/S0;
+}
+
+dVector MainWindow::computeDeltaR1(int iColumn)
+{ // columns: x(0), lesion(1), contra(2), sag(3)
+    int nTime = _tableShortTE.size();
+    dVector xTime, yCorrected;
+    double exponent = protocolPars.TE1 / (protocolPars.TE2 - protocolPars.TE1);
+    for (int jt=0; jt<nTime; jt++)
+    {
+        xTime.append(_tableShortTE[jt][0]);
+        double y = _tableShortTE[jt][iColumn] * qPow(_tableShortTE[jt][iColumn]/_tableLongTE[jt][iColumn],exponent);
+        yCorrected.append(y);
+    }
+    normalizeToFirstPoint(yCorrected);
+    // Convert from normalized signal to delta_R1
+    dVector DR1; DR1.resize(yCorrected.size());
+    for (int jt=0; jt<nTime; jt++)
+        DR1[jt] = yCorrected[jt] * ( 1. * qExp(_temporaryR1 * protocolPars.TRGado) ) / protocolPars.TRGado;
+    return DR1;
+}
+
+double MainWindow::integrate(dVector vector, int iTime)
+{
+    double dt = protocolPars.timeStepGd;
+    double sum=0.;
+    for (int jt=0; jt<=iTime; jt++)
+        sum += vector.at(jt) * dt;
+    return sum;
 }

@@ -208,14 +208,14 @@ void plotData::legendDoubleClick(QCPLegend *legend, QCPAbstractLegendItem *item)
   Q_UNUSED(legend)
   if (item) // only react if item was clicked (user could have clicked on border padding of legend where there is no item, then item is 0)
   {
-    QCPPlottableLegendItem *plItem = qobject_cast<QCPPlottableLegendItem*>(item);
-    bool ok;
-    QString newName = QInputDialog::getText(this, "QCustomPlot example", "New graph name:", QLineEdit::Normal, plItem->plottable()->name(), &ok);
-    if (ok)
-    {
-      plItem->plottable()->setName(newName);
-      _qcplot->replot();
-    }
+      QCPPlottableLegendItem *plItem = qobject_cast<QCPPlottableLegendItem*>(item);
+      bool ok;
+      QString newName = QInputDialog::getText(this, "QCustomPlot example", "New graph name:", QLineEdit::Normal, plItem->plottable()->name(), &ok);
+      if (ok)
+      {
+          plItem->plottable()->setName(newName);
+          _qcplot->replot();
+      }
   }
 }
 void plotData::contextMenuRequest(QPoint pos)

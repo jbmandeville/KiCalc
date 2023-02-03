@@ -2,6 +2,176 @@
 #include "mainwindow.h"
 #include "generalglm.h"
 
+void MainWindow::updateGraphs()
+{
+    FUNC_ENTER;
+
+    for (int jLevel=1; jLevel<8; jLevel++)
+        _fitR1_lesion = fitVariableTR(1,jLevel);
+    for (int jLevel=1; jLevel<8; jLevel++)
+        _fitR1_contra = fitVariableTR(2, jLevel);
+    for (int jLevel=1; jLevel<8; jLevel++)
+        _fitR1_sinus = fitVariableTR(3, jLevel);
+    FUNC_INFO << "R1 values" << _R1Lesion << _R1Contra << _R1Sag;
+    // columns name: x(0), lesion(1), contra(2), sag(3)
+    _deltaR1_lesion = computeDeltaR1(1);
+    _deltaR1_contra = computeDeltaR1(2);
+    _deltaR1_sinus  = computeDeltaR1(3);
+
+    // fit the lesion and contra side using GLM
+    double offsetLesion, offsetContra;
+    _fitLesion = fitKi(_deltaR1_lesion,_deltaR1_sinus,_kiLesion,offsetLesion);
+    _fitContra = fitKi(_deltaR1_contra,_deltaR1_sinus,_kiContra,offsetContra);
+
+    updateVariableTRPlot();
+    updateGdPlot();
+    updateDeltaR1Plot();
+    updateKTransPlot();
+}
+
+dVector MainWindow::computeDeltaR1(int iColumn)
+{ // columns: x(0), lesion(1), contra(2), sag(3)
+    int nTime = _tableShortTE.size();
+    dVector xTime, yCorrected;
+    double exponent = protocolPars.TE1 / (protocolPars.TE2 - protocolPars.TE1);
+    for (int jt=0; jt<nTime; jt++)
+    {
+        xTime.append(_tableShortTE[jt][0]);
+        double y = _tableShortTE[jt][iColumn] * qPow(_tableShortTE[jt][iColumn]/_tableLongTE[jt][iColumn],exponent);
+        yCorrected.append(y);
+    }
+    normalizeToFirstPoint(yCorrected);
+    // Convert from normalized signal to delta_R1
+    dVector DR1; DR1.resize(yCorrected.size());
+    for (int jt=0; jt<nTime; jt++)
+        DR1[jt] = (yCorrected[jt]-1.) * ( 1. + qExp(_temporaryR1 * protocolPars.TRGado) ) / _temporaryR1;
+    return DR1;
+}
+
+void MainWindow::normalizeToFirstPoint(dVector &vector)
+{
+    double S0  = vector.at(0);
+    for (int jt=0; jt<vector.size(); jt++)
+        vector[jt] = (vector[jt])/S0;
+}
+
+dVector MainWindow::fitKi(dVector dR1Tissue, dVector dR1Sinus, double &Ki, double &offset)
+{
+    // DR1_tiss = Ki/(1-Hct) * int_R1 + vd/(1-Hct) * R1
+
+    // dVector weights;
+    // int lowCutoff=3;
+    dVector integraldR1Sinus;
+    for (int jt=0; jt<dR1Tissue.size(); jt++)
+    {
+        integraldR1Sinus.append(integrate(dR1Sinus,jt));
+        /*
+        if ( jt > lowCutoff )
+            weights.append(1.);
+        else
+            weights.append(0.);
+        */
+    }
+    GeneralGLM fitter;
+    // fitter.setWeights(weights);
+    fitter.init(dR1Tissue.size(),0);           // ntime, ncoeff
+    fitter.setOLS();                           // set weights to 1
+    fitter.addBasisFunction(dR1Sinus);         // basis function "0" --> offset
+    fitter.addBasisFunction(integraldR1Sinus); // basis function "1" --> ki
+    fitter.fitWLS(dR1Tissue,true);
+    dVector fit = fitter.getFitAll();
+    offset = fitter.getBeta(0) * (1.-protocolPars.Hct);
+    Ki     = fitter.getBeta(1) * (1.-protocolPars.Hct);
+    return fit;
+}
+
+double MainWindow::integrate(dVector vector, int iTime)
+{
+    double dt = protocolPars.timeStepGd;
+    double sum=0.;
+    for (int jt=0; jt<=iTime; jt++)
+        sum += vector.at(jt) * dt;
+    return sum;
+}
+
+dVector MainWindow::fitVariableTR(int iColumn, int iLevel)
+{
+    FUNC_ENTER << iColumn << iLevel;
+    int nTime = _tableVTR.size();
+    if ( iLevel == 1 )
+    {
+        _S0Iterate = 1.5 * _tableVTR[nTime-1][iColumn];  // a bit bigger than the long TR signal
+        _R1Iterate = 0.35;
+    }
+    FUNC_INFO << " " << _S0Iterate << _R1Iterate;
+    double S0Width = _S0Iterate / qPow(2,iLevel);  // 2^7>100 should be enough
+    double R1Width = _R1Iterate / qPow(2,iLevel);
+    FUNC_INFO << "widths" << S0Width << R1Width;
+
+    double stepDivider = 5.;
+    double S0Step  = S0Width / stepDivider;
+    double S0Start = _S0Iterate-S0Width;
+    double S0Stop  = _S0Iterate+S0Width;
+    double R1Step  = R1Width / stepDivider;
+    double R1Start = _R1Iterate-R1Width;
+    double R1Stop  = _R1Iterate+R1Width;
+
+    dVector fit;        fit.resize(_tableVTR.size());
+    dVector fitBest;    fitBest=fit;
+    dVector TR, signal;
+    for (int jt=0; jt<nTime; jt++)
+    {
+        TR.append(_tableVTR[jt][0]/1000.);
+        signal.append(_tableVTR[jt][iColumn]);
+    }
+    FUNC_INFO << "signal" << signal;
+    FUNC_INFO << "TR" << TR;
+
+    _S0Iterate = S0Start;
+    _R1Iterate = R1Start;
+    dVector bestPars = {_S0Iterate, _R1Iterate};
+    double bestSOS = 1.e20;
+    FUNC_INFO << "_S0Iterate S0Start S0Stop S0Step" << _S0Iterate << S0Start << S0Stop << S0Step;
+    while (_S0Iterate <= S0Stop)
+    {
+        while (_R1Iterate <= R1Stop)
+        {
+            dVector pars = {_S0Iterate, _R1Iterate};
+            double sos=0.;
+            FUNC_INFO << "try pars" << pars;
+            for ( int jt=0; jt<nTime; jt++ )
+            {
+                fit[jt] = _S0Iterate * ( 1. - qExp(-_R1Iterate * TR[jt]) );
+                sos += SQR(signal[jt]-fit[jt]);
+            }
+            FUNC_INFO << "sos" << sos << "fit" << fit;
+            if ( sos < bestSOS )
+            {
+                bestSOS = sos;
+                bestPars = pars;
+                fitBest  = fit;
+            }
+            _R1Iterate += R1Step;
+        } // R1
+        _R1Iterate = R1Start;
+        _S0Iterate += S0Step;
+        FUNC_INFO << "change _S0Iterate to" << _S0Iterate << "stop =" << S0Stop;
+    } // S0
+
+    _S0Iterate = bestPars.at(0);
+    _R1Iterate = bestPars.at(1);
+    FUNC_INFO << "iColumn" << iColumn << "bestPars" << bestPars;
+
+    if ( iColumn == 1 )
+        _R1Lesion = _R1Iterate;
+    else if ( iColumn == 2 )
+        _R1Contra = _R1Iterate;
+    else
+        _R1Sag = _R1Iterate;
+    FUNC_EXIT << fitBest;
+    return fitBest;
+}
+
 MainWindow::MainWindow()
 {
     _centralWidget = new QWidget(this);
@@ -83,37 +253,48 @@ QHBoxLayout *MainWindow::createTopLayout()
 
 QHBoxLayout *MainWindow::createBottomLayout()
 {
-    _T1Lesion = new QLabel("lesion: ?");
-    _T1Contra = new QLabel("contra: ?");
-    _T1Sag    = new QLabel("sinus : ?");
+    _T1LesionLabel = new QLabel("lesion: ?");
+    _T1ContraLabel = new QLabel("contra: ?");
+    _T1SagLabel    = new QLabel("sinus : ?");
     auto *T1Layout = new QVBoxLayout();
-    T1Layout->addWidget(_T1Lesion);
-    T1Layout->addWidget(_T1Contra);
-    T1Layout->addWidget(_T1Sag);
-
-    _kTransSlopeLesion  = new QLabel("lesion Ki    : ?");
-    _kTransSlopeContra  = new QLabel("contra Ki    : ?");
-    _kTransOffsetLesion = new QLabel("lesion offset: ?");
-    auto *kTransLayout = new QVBoxLayout();
-    kTransLayout->addWidget(_kTransSlopeLesion);
-    kTransLayout->addWidget(_kTransSlopeContra);
-    kTransLayout->addWidget(_kTransOffsetLesion);
+    T1Layout->addWidget(_T1LesionLabel);
+    T1Layout->addWidget(_T1ContraLabel);
+    T1Layout->addWidget(_T1SagLabel);
 
     auto *T1Box = new QGroupBox("T1 values from fit:");
     T1Box->setLayout(T1Layout);
     T1Box->setStyleSheet("background-color:lightBlue;");
 
-    auto *kTransBox = new QGroupBox("values from fit:");
-    kTransBox->setLayout(kTransLayout);
-    kTransBox->setStyleSheet("background-color:lightBlue;");
+    _kTransLesionLabel  = new QLabel("lesion Ki    : ?");
+    _kTransContraLabel  = new QLabel("contra Ki    : ?");
+    auto *kTransLayout1 = new QVBoxLayout();
+    kTransLayout1->addWidget(_kTransLesionLabel);
+    kTransLayout1->addWidget(_kTransContraLabel);
+
+    auto *kTransBox1 = new QGroupBox("KTrans values:");
+    kTransBox1->setLayout(kTransLayout1);
+    kTransBox1->setStyleSheet("background-color:lightBlue;");
+
+    _kTransSlopeLesionLabel  = new QLabel("lesion KTrans    : ?");
+    _kTransSlopeContraLabel  = new QLabel("contra KTrans    : ?");
+    _kTransOffsetLesionLabel = new QLabel("lesion offset: ?");
+    auto *kTransLayout2 = new QVBoxLayout();
+    kTransLayout2->addWidget(_kTransSlopeLesionLabel);
+    kTransLayout2->addWidget(_kTransSlopeContraLabel);
+//    kTransLayout2->addWidget(_kTransOffsetLesionLabel);
+
+    auto *kTransBox2 = new QGroupBox("values from linear fit:");
+    kTransBox2->setLayout(kTransLayout2);
+    kTransBox2->setStyleSheet("background-color:lightBlue;");
 
     QWidget* spacer = new QWidget();
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
     auto *bottomLayout = new QHBoxLayout();
     bottomLayout->addWidget(T1Box);
+    bottomLayout->addWidget(kTransBox1);
     bottomLayout->addWidget(spacer);
-    bottomLayout->addWidget(kTransBox);
+    bottomLayout->addWidget(kTransBox2);
 
     return bottomLayout;
 }
@@ -272,11 +453,12 @@ void MainWindow::readDataFiles()
     FUNC_INFO << "nTime" << _tableLongTE.size();
 }
 
-void MainWindow::updateGraphs()
+void MainWindow::updateVariableTRPlot()
 {
-    FUNC_ENTER << _checkBoxLesion->isChecked() << _checkBoxContra->isChecked() << _checkBoxSagittal->isChecked();
+    dVector xFit;
+    for (int jt=0; jt<_tableVTR.size(); jt++)
+        xFit.append(_tableVTR[jt][0]);
 
-//    fitVariableTR();
     // Variable-TR plot
     _plotVariableTr->init();
     _plotVariableTr->setLabelXAxis("TR (sec)");
@@ -286,20 +468,32 @@ void MainWindow::updateGraphs()
     {
         addCurveToPlot(_plotVariableTr, _columnNamesVTR, _tableVTR, 1);
         _plotVariableTr->setPointSize(5);
+        _plotVariableTr->addCurve(0,"fit");
+        _plotVariableTr->setData(xFit,_fitR1_lesion);
+        _plotVariableTr->setColor(Qt::blue);  // lesion
     }
     if ( _checkBoxContra->isChecked() )
     {
         addCurveToPlot(_plotVariableTr, _columnNamesVTR, _tableVTR, 2);
         _plotVariableTr->setPointSize(5);
+        _plotVariableTr->addCurve(0,"fit");
+        _plotVariableTr->setData(xFit,_fitR1_contra);
+        _plotVariableTr->setColor(Qt::black);  // contra
     }
     if ( _checkBoxSagittal->isChecked() )
     {
         addCurveToPlot(_plotVariableTr, _columnNamesVTR, _tableVTR, 3);
         _plotVariableTr->setPointSize(5);
+        _plotVariableTr->addCurve(0,"fit");
+        _plotVariableTr->setData(xFit,_fitR1_sinus);
+        _plotVariableTr->setColor(Qt::red);  // lesion
     }
     _plotVariableTr->conclude(0,true);
     _plotVariableTr->plotDataAndFit(true);
+}
 
+void MainWindow::updateGdPlot()
+{
     // columns: x(0), lesion(1), contra(2), sag(3)
     // Gd-time series
     // columns name: x(0), lesion(1), contra(2), sag(3)
@@ -341,12 +535,6 @@ void MainWindow::updateGraphs()
     }
     _plotEchoes->conclude(0,true);
     _plotEchoes->plotDataAndFit(true);
-
-    // delta_R1 plot
-    addDeltaR1Plot();
-
-    // KTrans plot
-    addKTransPlot();
 }
 
 void MainWindow::addCurveToPlot(plotData *plot, QStringList columnNames, dMatrix table, int iColumn)
@@ -401,12 +589,8 @@ void MainWindow::addCorrectedCurveToPlot(QStringList columnNames, int iColumn)
         plot->setColor(Qt::red);   // sag sinus
 }
 
-void MainWindow::addDeltaR1Plot()
+void MainWindow::updateDeltaR1Plot()
 {
-    // columns name: x(0), lesion(1), contra(2), sag(3)
-    _deltaR1_lesion = computeDeltaR1(1);
-    _deltaR1_contra = computeDeltaR1(2);
-    _deltaR1_sinus  = computeDeltaR1(3);
     dVector xTime;
     int nTime = _tableShortTE.size();
     for (int jt=0; jt<nTime; jt++)
@@ -420,10 +604,9 @@ void MainWindow::addDeltaR1Plot()
         _plotDeltaR1->addCurve(0,_columnNamesShortTE.at(1));
         _plotDeltaR1->setData(xTime, _deltaR1_lesion);
         _plotDeltaR1->setColor(Qt::blue);  // lesion
-        // fit the lesion
-        dVector fit = fitKi(_deltaR1_lesion,_deltaR1_sinus);
+        _kTransLesionLabel->setText(QString("lesion Ki: %1 1/hr").arg(_kiLesion*60.));
         _plotDeltaR1->addCurve(0,"fit");
-        _plotDeltaR1->setData(xTime, fit);
+        _plotDeltaR1->setData(xTime, _fitLesion);
         _plotDeltaR1->setColor(Qt::blue);  // lesion
         _plotDeltaR1->setLineThickness(2);
     }
@@ -432,10 +615,9 @@ void MainWindow::addDeltaR1Plot()
         _plotDeltaR1->addCurve(0,_columnNamesShortTE.at(1));
         _plotDeltaR1->setData(xTime, _deltaR1_contra);
         _plotDeltaR1->setColor(Qt::black);  // contra
-        // fit the contra side
-        dVector fit = fitKi(_deltaR1_contra,_deltaR1_sinus);
+        _kTransContraLabel->setText(QString("contra Ki: %1 1/hr").arg(_kiContra*60.));
         _plotDeltaR1->addCurve(0,"fit");
-        _plotDeltaR1->setData(xTime, fit);
+        _plotDeltaR1->setData(xTime, _fitContra);
         _plotDeltaR1->setColor(Qt::black);  // contra
         _plotDeltaR1->setLineThickness(2);
     }
@@ -449,7 +631,7 @@ void MainWindow::addDeltaR1Plot()
     _plotDeltaR1->plotDataAndFit(true);
 }
 
-void MainWindow::addKTransPlot()
+void MainWindow::updateKTransPlot()
 {
     _plotKTrans->init();
     _plotKTrans->setLabelXAxis("time");
@@ -490,8 +672,8 @@ void MainWindow::addKTransPlot()
         _plotKTrans->setData(xTime, fit);
         _plotKTrans->setColor(Qt::blue);  // lesion
         _plotKTrans->setLineThickness(2);
-        _kTransOffsetLesion->setText(QString("lesion offset: %1").arg(poly.getBeta(0)));
-        _kTransSlopeLesion->setText(QString("lesion Ki: %1").arg(poly.getBeta(1)));
+        _kTransOffsetLesionLabel->setText(QString("lesion offset: %1").arg(poly.getBeta(0)));
+        _kTransSlopeLesionLabel->setText(QString("lesion Ki: %1 1/hr").arg(poly.getBeta(1)*60.));
     }
 
     if ( _checkBoxContra->isChecked() )
@@ -511,85 +693,10 @@ void MainWindow::addKTransPlot()
         _plotKTrans->setData(xTime, fit);
         _plotKTrans->setColor(Qt::black);  // lesion
         _plotKTrans->setLineThickness(2);
-        _kTransSlopeContra->setText(QString("contra Ki*1000: %1").arg(poly.getBeta(1)*1000.));
+        _kTransSlopeContraLabel->setText(QString("contra Ki: %1 1/hr").arg(poly.getBeta(1)*60.));
     }
 
     _plotKTrans->conclude(0,true);
     _plotKTrans->plotDataAndFit(true);
 }
 
-void MainWindow::normalizeToFirstPoint(dVector &vector)
-{
-    double S0  = vector.at(0);
-    for (int jt=0; jt<vector.size(); jt++)
-        vector[jt] = (vector[jt])/S0;
-}
-
-dVector MainWindow::computeDeltaR1(int iColumn)
-{ // columns: x(0), lesion(1), contra(2), sag(3)
-    int nTime = _tableShortTE.size();
-    dVector xTime, yCorrected;
-    double exponent = protocolPars.TE1 / (protocolPars.TE2 - protocolPars.TE1);
-    for (int jt=0; jt<nTime; jt++)
-    {
-        xTime.append(_tableShortTE[jt][0]);
-        double y = _tableShortTE[jt][iColumn] * qPow(_tableShortTE[jt][iColumn]/_tableLongTE[jt][iColumn],exponent);
-        yCorrected.append(y);
-    }
-    normalizeToFirstPoint(yCorrected);
-    // Convert from normalized signal to delta_R1
-    dVector DR1; DR1.resize(yCorrected.size());
-    FUNC_INFO << "correction" << _temporaryR1 << protocolPars.TRGado;
-    FUNC_INFO << "correction" << ( 1. + qExp(_temporaryR1 * protocolPars.TRGado) ) / _temporaryR1;
-    for (int jt=0; jt<nTime; jt++)
-        DR1[jt] = (yCorrected[jt]-1.) * ( 1. + qExp(_temporaryR1 * protocolPars.TRGado) ) / _temporaryR1;
-    return DR1;
-}
-
-dVector MainWindow::fitKi(dVector dR1Tissue, dVector dR1Sinus)
-{
-    // DR1_tiss = Ki/(1-Hct) * int_R1 + vd/(1-Hct) * R1
-    dVector integraldR1Sinus;
-    dVector weights;
-    int lowCutoff=1;
-    for (int jt=0; jt<dR1Tissue.size(); jt++)
-    {
-        integraldR1Sinus.append(integrate(dR1Sinus,jt));
-        if ( jt > lowCutoff )
-//            weights.append(SQR(dR1Tissue.at(jt)));
-            weights.append(1.);
-        else
-            weights.append(0.);
-    }
-    FUNC_INFO << "integraldR1Sinus" << integraldR1Sinus;
-    GeneralGLM fitter;
-    fitter.init(dR1Tissue.size(),0);           // ntime, ncoeff
-//    fitter.setOLS();                           // set weights to 1
-    fitter.setWeights(weights);
-    fitter.addBasisFunction(dR1Sinus);         // basis function "0" --> offset
-    fitter.addBasisFunction(integraldR1Sinus); // basis function "1" --> ki
-    fitter.fitWLS(dR1Tissue,true);
-    dVector fit = fitter.getFitAll();
-    double off = fitter.getBeta(0) * (1.-protocolPars.Hct);
-    double ki  = fitter.getBeta(1) * (1.-protocolPars.Hct);
-    qInfo() << "*** ki, off ***" << ki << off;
-    return fit;
-}
-
-double MainWindow::integrate(dVector vector, int iTime)
-{
-    double dt = protocolPars.timeStepGd;
-    double sum=0.;
-    for (int jt=0; jt<=iTime; jt++)
-        sum += vector.at(jt) * dt;
-    return sum;
-}
-
-void MainWindow::fitVariableTR(int iColumn)
-{
-    // Signal model assuming 90 degree flip: S(TR) = S0 * (1 - exp(-TR*R1))
-    double S0Guess = 1.5 * _tableVTR[iColumn].last();  // a bit bigger than the long TR signal
-    double T1Guess = 2500.;
-    double R1Guess = 1./T1Guess;
-
-}

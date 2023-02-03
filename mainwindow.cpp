@@ -554,7 +554,7 @@ dVector MainWindow::fitKi(dVector dR1Tissue, dVector dR1Sinus)
     int lowCutoff=1;
     for (int jt=0; jt<dR1Tissue.size(); jt++)
     {
-        integraldR1Sinus.append(integrate(dR1Tissue,jt));
+        integraldR1Sinus.append(integrate(dR1Sinus,jt));
         if ( jt > lowCutoff )
 //            weights.append(SQR(dR1Tissue.at(jt)));
             weights.append(1.);

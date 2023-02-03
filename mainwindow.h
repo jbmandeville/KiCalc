@@ -89,8 +89,11 @@ private:
     dVector _fitR1_sinus;
 
     QHBoxLayout *createTopLayout();
+    QWidget     *createTopPlotDuo();
+    QHBoxLayout *createMiddleLayout();
+    QWidget     *createBottomPlotDuo();
     QHBoxLayout *createBottomLayout();
-    QWidget *createPlotWidget();
+
     CommandLineParseResult parseCommandLine(QStringList commandLine);
     QString reformatStartupHelpText(QString inputText);
     void readDataFiles();

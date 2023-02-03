@@ -179,12 +179,15 @@ MainWindow::MainWindow()
 
     auto *mainLayout = new QVBoxLayout( _centralWidget );
     mainLayout->addLayout(createTopLayout());
-    mainLayout->addWidget(createPlotWidget());
+    mainLayout->addWidget(createTopPlotDuo());
+    mainLayout->addLayout(createMiddleLayout());
+    mainLayout->addWidget(createBottomPlotDuo());
     mainLayout->addLayout(createBottomLayout());
     mainLayout->setStretch(0,1);
     mainLayout->setStretch(1,20);
-    mainLayout->setStretch(0,2);
-
+    mainLayout->setStretch(2,1);
+    mainLayout->setStretch(3,20);
+    mainLayout->setStretch(4,1);
     // add a status bar
     _statusBar = this->statusBar();
     _statusBar->setStyleSheet("color:Darkred");
@@ -206,92 +209,106 @@ MainWindow::MainWindow()
 
 QHBoxLayout *MainWindow::createTopLayout()
 {
-    _dataSetLabel = new QLabel("dataset name");
-    auto *dataSetLayout = new QHBoxLayout();
-    dataSetLayout->addWidget(_dataSetLabel);
-    auto *dataSetBox = new QGroupBox("DataSet");
-    dataSetBox->setLayout(dataSetLayout);
-    dataSetBox->setStyleSheet("background-color:lightYellow;");
-
     _checkBoxLesion   = new QCheckBox("lesion");
     _checkBoxContra   = new QCheckBox("contralateral");
     _checkBoxSagittal = new QCheckBox("sag sinus");
     _checkBoxLesion->setChecked(true);
     _checkBoxContra->setChecked(true);
     _checkBoxSagittal->setChecked(true);
-
-    _radioRaw  = new QRadioButton("raw");
-    _radioNorm = new QRadioButton("normalized");
-    _includeCorrected = new QCheckBox("corrected S(t)");
-    _radioNorm->setChecked(true);
-
-    auto *radioLayout = new QGridLayout();
-    radioLayout->addWidget(_checkBoxLesion,0,0);
-    radioLayout->addWidget(_checkBoxContra,0,1);
-    radioLayout->addWidget(_checkBoxSagittal,0,2);
-    radioLayout->addWidget(_radioRaw,1,0);
-    radioLayout->addWidget(_radioNorm,1,1);
-    radioLayout->addWidget(_includeCorrected,1,2);
-
     connect(_checkBoxLesion,   SIGNAL(toggled(bool)), this, SLOT(updateGraphs()));
     connect(_checkBoxContra,   SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
     connect(_checkBoxSagittal, SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
+
+    _radioRaw  = new QRadioButton("raw");
+    _radioNorm = new QRadioButton("normalized");
+    _radioNorm->setChecked(true);
     connect(_radioRaw,         SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
     connect(_radioNorm,        SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
-    connect(_includeCorrected, SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
 
-    auto *radioBox = new QGroupBox("Choose curves");
-    radioBox->setLayout(radioLayout);
-    radioBox->setStyleSheet("background-color:lightYellow;");
+    QFrame* separator = new QFrame();
+    separator->setFrameShape(QFrame::VLine);
+    separator->setLineWidth(3);
+    separator->setFixedHeight(20);
+    separator->setFrameShadow(QFrame::Raised);
+
+    auto *regionLayout = new QHBoxLayout();
+    regionLayout->addWidget(_checkBoxLesion);
+    regionLayout->addWidget(_checkBoxContra);
+    regionLayout->addWidget(_checkBoxSagittal);
+    regionLayout->addWidget(separator);
+    regionLayout->addWidget(_radioRaw);
+    regionLayout->addWidget(_radioNorm);
+
+    auto *regionBox = new QGroupBox("Choose curves & normalization");
+    regionBox->setLayout(regionLayout);
+    regionBox->setStyleSheet("background-color:lightYellow;");
 
     auto *topLayout = new QHBoxLayout();
-    topLayout->addWidget(dataSetBox);
-    topLayout->addWidget(radioBox);
+    topLayout->addWidget(regionBox);
 
     return topLayout;
 }
 
-QHBoxLayout *MainWindow::createBottomLayout()
+QHBoxLayout *MainWindow::createMiddleLayout()
 {
-    _T1LesionLabel = new QLabel("lesion: ?");
-    _T1ContraLabel = new QLabel("contra: ?");
-    _T1SagLabel    = new QLabel("sinus : ?");
-    auto *T1Layout = new QVBoxLayout();
+    FUNC_ENTER;
+    _T1LesionLabel = new QLabel("T1 lesion: ?");
+    _T1ContraLabel = new QLabel("T1 contra: ?");
+    _T1SagLabel    = new QLabel("T1 sinus : ?");
+    auto *T1Layout = new QHBoxLayout();
     T1Layout->addWidget(_T1LesionLabel);
     T1Layout->addWidget(_T1ContraLabel);
     T1Layout->addWidget(_T1SagLabel);
 
-    auto *T1Box = new QGroupBox("T1 values from fit:");
+//    auto *T1Box = new QGroupBox("T1 values from fit:");
+    auto *T1Box = new QGroupBox();
     T1Box->setLayout(T1Layout);
-    T1Box->setStyleSheet("background-color:lightBlue;");
+    T1Box->setStyleSheet("background-color:lightYellow;");
 
-    _kTransLesionLabel  = new QLabel("lesion Ki    : ?");
-    _kTransContraLabel  = new QLabel("contra Ki    : ?");
-    auto *kTransLayout1 = new QVBoxLayout();
+    _includeCorrected = new QCheckBox("corrected S(t)");
+    connect(_includeCorrected, SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
+
+    auto *corrLayout = new QHBoxLayout();
+    corrLayout->addWidget(_includeCorrected);
+    auto *corrBox = new QGroupBox();
+    corrBox->setLayout(corrLayout);
+    corrBox->setStyleSheet("background-color:lightYellow;");
+
+    auto *middleLayout = new QHBoxLayout();
+    middleLayout->addWidget(T1Box);
+    middleLayout->addWidget(corrBox);
+    return middleLayout;
+}
+
+QHBoxLayout *MainWindow::createBottomLayout()
+{
+    FUNC_ENTER;
+    _kTransLesionLabel  = new QLabel("lesion    : ?");
+    _kTransContraLabel  = new QLabel("contra    : ?");
+    auto *kTransLayout1 = new QHBoxLayout();
     kTransLayout1->addWidget(_kTransLesionLabel);
     kTransLayout1->addWidget(_kTransContraLabel);
 
-    auto *kTransBox1 = new QGroupBox("KTrans values:");
+    auto *kTransBox1 = new QGroupBox("Ki values (1/hr):");
     kTransBox1->setLayout(kTransLayout1);
-    kTransBox1->setStyleSheet("background-color:lightBlue;");
+    kTransBox1->setStyleSheet("background-color:lightCyan;");
 
     _kTransSlopeLesionLabel  = new QLabel("lesion KTrans    : ?");
     _kTransSlopeContraLabel  = new QLabel("contra KTrans    : ?");
     _kTransOffsetLesionLabel = new QLabel("lesion offset: ?");
-    auto *kTransLayout2 = new QVBoxLayout();
+    auto *kTransLayout2 = new QHBoxLayout();
     kTransLayout2->addWidget(_kTransSlopeLesionLabel);
     kTransLayout2->addWidget(_kTransSlopeContraLabel);
 //    kTransLayout2->addWidget(_kTransOffsetLesionLabel);
 
     auto *kTransBox2 = new QGroupBox("values from linear fit:");
     kTransBox2->setLayout(kTransLayout2);
-    kTransBox2->setStyleSheet("background-color:lightBlue;");
+    kTransBox2->setStyleSheet("background-color:lightYellow;");
 
     QWidget* spacer = new QWidget();
     spacer->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
 
     auto *bottomLayout = new QHBoxLayout();
-    bottomLayout->addWidget(T1Box);
     bottomLayout->addWidget(kTransBox1);
     bottomLayout->addWidget(spacer);
     bottomLayout->addWidget(kTransBox2);
@@ -299,22 +316,35 @@ QHBoxLayout *MainWindow::createBottomLayout()
     return bottomLayout;
 }
 
-QWidget *MainWindow::createPlotWidget()
+QWidget *MainWindow::createTopPlotDuo()
 {
     _plotVariableTr = new plotData(0);
     _plotEchoes     = new plotData(1);
-    _plotDeltaR1    = new plotData(2);
-    _plotKTrans     = new plotData(3);
 
-    auto *plotLayout = new QGridLayout();
-    plotLayout->addWidget(_plotVariableTr->getPlotSurface(),0,0);
-    plotLayout->addWidget(_plotEchoes->getPlotSurface(),0,1);
-    plotLayout->addWidget(_plotDeltaR1->getPlotSurface(),1,0);
-    plotLayout->addWidget(_plotKTrans->getPlotSurface(),1,1);
+    auto *plotLayout = new QHBoxLayout();
+    plotLayout->addWidget(_plotVariableTr->getPlotSurface());
+    plotLayout->addWidget(_plotEchoes->getPlotSurface());
 
     auto *plotWidget = new QWidget();
     plotWidget->setLayout(plotLayout);
-    QSize size; size.setWidth(900);  size.setHeight(600);
+    QSize size; size.setWidth(900);  size.setHeight(300);
+    plotWidget->setMinimumSize(size);
+
+    return plotWidget;
+}
+
+QWidget *MainWindow::createBottomPlotDuo()
+{
+    _plotDeltaR1    = new plotData(2);
+    _plotKTrans     = new plotData(3);
+
+    auto *plotLayout = new QHBoxLayout();
+    plotLayout->addWidget(_plotDeltaR1->getPlotSurface());
+    plotLayout->addWidget(_plotKTrans->getPlotSurface());
+
+    auto *plotWidget = new QWidget();
+    plotWidget->setLayout(plotLayout);
+    QSize size; size.setWidth(400);  size.setHeight(300);
     plotWidget->setMinimumSize(size);
 
     return plotWidget;
@@ -458,6 +488,13 @@ void MainWindow::updateVariableTRPlot()
     dVector xFit;
     for (int jt=0; jt<_tableVTR.size(); jt++)
         xFit.append(_tableVTR[jt][0]);
+
+    QString number;  number.setNum(1./_R1Lesion,'g',2);
+    _T1LesionLabel->setText(QString("T1 lesion: %1").arg(number));
+    number.setNum(1./_R1Contra,'g',2);
+    _T1ContraLabel->setText(QString("T1 contra: %1").arg(number));
+    number.setNum(1./_R1Sag,'g',2);
+    _T1SagLabel->setText(QString("T1 sinus: %1").arg(number));
 
     // Variable-TR plot
     _plotVariableTr->init();
@@ -604,7 +641,9 @@ void MainWindow::updateDeltaR1Plot()
         _plotDeltaR1->addCurve(0,_columnNamesShortTE.at(1));
         _plotDeltaR1->setData(xTime, _deltaR1_lesion);
         _plotDeltaR1->setColor(Qt::blue);  // lesion
-        _kTransLesionLabel->setText(QString("lesion Ki: %1 1/hr").arg(_kiLesion*60.));
+        QString number;
+        number.setNum(_kiLesion*60.,'g',2);
+        _kTransLesionLabel->setText(QString("lesion: %1").arg(number));
         _plotDeltaR1->addCurve(0,"fit");
         _plotDeltaR1->setData(xTime, _fitLesion);
         _plotDeltaR1->setColor(Qt::blue);  // lesion
@@ -615,7 +654,9 @@ void MainWindow::updateDeltaR1Plot()
         _plotDeltaR1->addCurve(0,_columnNamesShortTE.at(1));
         _plotDeltaR1->setData(xTime, _deltaR1_contra);
         _plotDeltaR1->setColor(Qt::black);  // contra
-        _kTransContraLabel->setText(QString("contra Ki: %1 1/hr").arg(_kiContra*60.));
+        QString number;
+        number.setNum(_kiContra*60.,'g',2);
+        _kTransContraLabel->setText(QString("contra: %1").arg(number));
         _plotDeltaR1->addCurve(0,"fit");
         _plotDeltaR1->setData(xTime, _fitContra);
         _plotDeltaR1->setColor(Qt::black);  // contra
@@ -673,7 +714,9 @@ void MainWindow::updateKTransPlot()
         _plotKTrans->setColor(Qt::blue);  // lesion
         _plotKTrans->setLineThickness(2);
         _kTransOffsetLesionLabel->setText(QString("lesion offset: %1").arg(poly.getBeta(0)));
-        _kTransSlopeLesionLabel->setText(QString("lesion Ki: %1 1/hr").arg(poly.getBeta(1)*60.));
+        QString number;
+        number.setNum(poly.getBeta(1)*60.,'g',2);
+        _kTransSlopeLesionLabel->setText(QString("lesion: %1").arg(number));
     }
 
     if ( _checkBoxContra->isChecked() )
@@ -693,7 +736,9 @@ void MainWindow::updateKTransPlot()
         _plotKTrans->setData(xTime, fit);
         _plotKTrans->setColor(Qt::black);  // lesion
         _plotKTrans->setLineThickness(2);
-        _kTransSlopeContraLabel->setText(QString("contra Ki: %1 1/hr").arg(poly.getBeta(1)*60.));
+        QString number;
+        number.setNum(poly.getBeta(1)*60.,'g',2);
+        _kTransSlopeContraLabel->setText(QString("contra: %1").arg(number));
     }
 
     _plotKTrans->conclude(0,true);

@@ -53,12 +53,13 @@ private:
     QLabel *_T1Lesion;
     QLabel *_T1Contra;
     QLabel *_T1Sag;
-    QLabel *_kTransSlope;
-    QLabel *_kTransOffset;
+    QLabel *_kTransSlopeLesion;
+    QLabel *_kTransSlopeContra;
+    QLabel *_kTransOffsetLesion;
 
     CommandOptions _inputOptions;
     fixedParameters protocolPars;
-    double _temporaryR1 = 0.35;
+    double _temporaryR1 = 0.33;
 
     QStringList _columnNamesVTR;     // column names
     QStringList _columnNamesShortTE; // column names
@@ -68,6 +69,10 @@ private:
     dMatrix _tableShortTE; // [time][column]
     dMatrix _tableLongTE;  // [time][column]
 
+    dVector _deltaR1_lesion;
+    dVector _deltaR1_contra;
+    dVector _deltaR1_sinus;
+
     QHBoxLayout *createTopLayout();
     QHBoxLayout *createBottomLayout();
     QWidget *createPlotWidget();
@@ -75,11 +80,14 @@ private:
     QString reformatStartupHelpText(QString inputText);
     void readDataFiles();
     void addCurveToPlot(plotData *plot, QStringList columnNames, dMatrix table, int iColumn);
-    void addCorrectedCurveToPlot(QStringList columnNames, int iColumn, bool convertToDR1);
+    void addCorrectedCurveToPlot(QStringList columnNames, int iColumn);
+    void addDeltaR1Plot();
     void addKTransPlot();
     void normalizeToFirstPoint(dVector &vector);
     dVector computeDeltaR1(int iColumn);
     double integrate(dVector vector, int iTime);
+    void fitVariableTR(int iColumn);
+    dVector fitKi(dVector dR1Tissue, dVector dR1Sinus);
 
 public:
     MainWindow();

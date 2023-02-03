@@ -91,11 +91,13 @@ QHBoxLayout *MainWindow::createBottomLayout()
     T1Layout->addWidget(_T1Contra);
     T1Layout->addWidget(_T1Sag);
 
-    _kTransSlope  = new QLabel("slope (Ki): ?");
-    _kTransOffset = new QLabel("offset    : ?");
+    _kTransSlopeLesion  = new QLabel("lesion Ki    : ?");
+    _kTransSlopeContra  = new QLabel("contra Ki    : ?");
+    _kTransOffsetLesion = new QLabel("lesion offset: ?");
     auto *kTransLayout = new QVBoxLayout();
-    kTransLayout->addWidget(_kTransSlope);
-    kTransLayout->addWidget(_kTransOffset);
+    kTransLayout->addWidget(_kTransSlopeLesion);
+    kTransLayout->addWidget(_kTransSlopeContra);
+    kTransLayout->addWidget(_kTransOffsetLesion);
 
     auto *T1Box = new QGroupBox("T1 values from fit:");
     T1Box->setLayout(T1Layout);
@@ -274,6 +276,7 @@ void MainWindow::updateGraphs()
 {
     FUNC_ENTER << _checkBoxLesion->isChecked() << _checkBoxContra->isChecked() << _checkBoxSagittal->isChecked();
 
+//    fitVariableTR();
     // Variable-TR plot
     _plotVariableTr->init();
     _plotVariableTr->setLabelXAxis("TR (sec)");
@@ -297,6 +300,7 @@ void MainWindow::updateGraphs()
     _plotVariableTr->conclude(0,true);
     _plotVariableTr->plotDataAndFit(true);
 
+    // columns: x(0), lesion(1), contra(2), sag(3)
     // Gd-time series
     // columns name: x(0), lesion(1), contra(2), sag(3)
     _plotEchoes->init();
@@ -309,7 +313,7 @@ void MainWindow::updateGraphs()
         addCurveToPlot(_plotEchoes, _columnNamesLongTE,  _tableLongTE,  1);
         if ( _includeCorrected->isChecked() )
         {
-            addCorrectedCurveToPlot(_columnNamesShortTE, 1, false);
+            addCorrectedCurveToPlot(_columnNamesShortTE, 1);
             _plotEchoes->setPointSize(3);
         }
     }
@@ -320,7 +324,7 @@ void MainWindow::updateGraphs()
         addCurveToPlot(_plotEchoes, _columnNamesLongTE,  _tableLongTE,  2);
         if ( _includeCorrected->isChecked() )
         {
-            addCorrectedCurveToPlot(_columnNamesShortTE, 2, false);
+            addCorrectedCurveToPlot(_columnNamesShortTE, 2);
             _plotEchoes->setPointSize(3);
         }
     }
@@ -331,7 +335,7 @@ void MainWindow::updateGraphs()
         addCurveToPlot(_plotEchoes, _columnNamesLongTE,  _tableLongTE,  3);
         if ( _includeCorrected->isChecked() )
         {
-            addCorrectedCurveToPlot(_columnNamesShortTE, 3, false);
+            addCorrectedCurveToPlot(_columnNamesShortTE, 3);
             _plotEchoes->setPointSize(3);
         }
     }
@@ -339,18 +343,7 @@ void MainWindow::updateGraphs()
     _plotEchoes->plotDataAndFit(true);
 
     // delta_R1 plot
-    // columns name: x(0), lesion(1), contra(2), sag(3)
-    _plotDeltaR1->init();
-    _plotDeltaR1->setLabelXAxis("time");
-    _plotDeltaR1->setLabelYAxis("Delta_R2 (Gd)");
-    if ( _checkBoxLesion->isChecked() )
-        addCorrectedCurveToPlot(_columnNamesShortTE, 1, true);
-    if ( _checkBoxContra->isChecked() )
-        addCorrectedCurveToPlot(_columnNamesShortTE, 2, true);
-    if ( _checkBoxSagittal->isChecked() )
-        addCorrectedCurveToPlot(_columnNamesShortTE, 3, true);
-    _plotDeltaR1->conclude(0,true);
-    _plotDeltaR1->plotDataAndFit(true);
+    addDeltaR1Plot();
 
     // KTrans plot
     addKTransPlot();
@@ -379,13 +372,10 @@ void MainWindow::addCurveToPlot(plotData *plot, QStringList columnNames, dMatrix
         plot->setColor(Qt::red);   // sag sinus
 }
 
-void MainWindow::addCorrectedCurveToPlot(QStringList columnNames, int iColumn, bool convertToDR1)
+void MainWindow::addCorrectedCurveToPlot(QStringList columnNames, int iColumn)
 {
     plotData *plot;
-    if ( convertToDR1 )
-        plot = _plotDeltaR1;
-    else
-        plot = _plotEchoes;
+    plot = _plotEchoes;
 
     QString columnName = columnNames.at(iColumn);
     plot->addCurve(0,columnName);
@@ -400,14 +390,7 @@ void MainWindow::addCorrectedCurveToPlot(QStringList columnNames, int iColumn, b
         yCorrected.append(y);
     }
 
-    if ( _radioNorm->isChecked() || convertToDR1 ) normalizeToFirstPoint(yCorrected);
-
-    if ( convertToDR1 )
-    {
-        // Convert from normalized signal to delta_R1
-        for (int jt=0; jt<nTime; jt++)
-            yCorrected[jt] *= ( 1. * qExp(_temporaryR1 * protocolPars.TRGado) ) / protocolPars.TRGado;
-    }
+    if ( _radioNorm->isChecked() ) normalizeToFirstPoint(yCorrected);
 
     plot->setData(xTime, yCorrected);
     if ( iColumn == 1 )
@@ -418,38 +401,77 @@ void MainWindow::addCorrectedCurveToPlot(QStringList columnNames, int iColumn, b
         plot->setColor(Qt::red);   // sag sinus
 }
 
+void MainWindow::addDeltaR1Plot()
+{
+    // columns name: x(0), lesion(1), contra(2), sag(3)
+    _deltaR1_lesion = computeDeltaR1(1);
+    _deltaR1_contra = computeDeltaR1(2);
+    _deltaR1_sinus  = computeDeltaR1(3);
+    dVector xTime;
+    int nTime = _tableShortTE.size();
+    for (int jt=0; jt<nTime; jt++)
+        xTime.append(_tableShortTE[jt][0]);
+
+    _plotDeltaR1->init();
+    _plotDeltaR1->setLabelXAxis("time");
+    _plotDeltaR1->setLabelYAxis("Delta_R1 (Gd)");
+    if ( _checkBoxLesion->isChecked() )
+    {
+        _plotDeltaR1->addCurve(0,_columnNamesShortTE.at(1));
+        _plotDeltaR1->setData(xTime, _deltaR1_lesion);
+        _plotDeltaR1->setColor(Qt::blue);  // lesion
+        // fit the lesion
+        dVector fit = fitKi(_deltaR1_lesion,_deltaR1_sinus);
+        _plotDeltaR1->addCurve(0,"fit");
+        _plotDeltaR1->setData(xTime, fit);
+        _plotDeltaR1->setColor(Qt::blue);  // lesion
+        _plotDeltaR1->setLineThickness(2);
+    }
+    if ( _checkBoxContra->isChecked() )
+    {
+        _plotDeltaR1->addCurve(0,_columnNamesShortTE.at(1));
+        _plotDeltaR1->setData(xTime, _deltaR1_contra);
+        _plotDeltaR1->setColor(Qt::black);  // contra
+        // fit the contra side
+        dVector fit = fitKi(_deltaR1_contra,_deltaR1_sinus);
+        _plotDeltaR1->addCurve(0,"fit");
+        _plotDeltaR1->setData(xTime, fit);
+        _plotDeltaR1->setColor(Qt::black);  // contra
+        _plotDeltaR1->setLineThickness(2);
+    }
+    if ( _checkBoxSagittal->isChecked() )
+    {
+        _plotDeltaR1->addCurve(0,_columnNamesShortTE.at(1));
+        _plotDeltaR1->setData(xTime, _deltaR1_sinus);
+        _plotDeltaR1->setColor(Qt::red);  // sinus
+    }
+    _plotDeltaR1->conclude(0,true);
+    _plotDeltaR1->plotDataAndFit(true);
+}
+
 void MainWindow::addKTransPlot()
 {
     _plotKTrans->init();
     _plotKTrans->setLabelXAxis("time");
     _plotKTrans->setLabelYAxis("unitless");
 
-    // columns: x(0), lesion(1), contra(2), sag(3)
-    dVector DR1_lesion = computeDeltaR1(1);
-    dVector DR1_contra = computeDeltaR1(2);
-    dVector DR1_plasma = computeDeltaR1(3);
-
-    FUNC_INFO << "DR1_lesion" << DR1_lesion;
-    FUNC_INFO << "DR1_contra" << DR1_contra;
-    FUNC_INFO << "DR1_plasma" << DR1_plasma;
-
     dVector xTime, yLesionUnitless, yContraUnitLess;
     int nTime = _tableShortTE.size();
-    int lowCutoff=2;
+    int lowCutoff=1;
+    FUNC_INFO << "_deltaR1_sinus" << _deltaR1_sinus;
     for (int jt=0; jt<nTime; jt++)
     {
         if ( jt > lowCutoff )
         {
-            double x = integrate(DR1_plasma,jt) / DR1_plasma[jt];
-            xTime.append(x);
-            double y = (1.-protocolPars.Hct) * DR1_lesion[jt] / DR1_plasma[jt];
-            yLesionUnitless.append(y);
-            y = (1.-protocolPars.Hct) * DR1_plasma[jt] / DR1_plasma[jt];
-            yContraUnitLess.append(y);
+            xTime.append(integrate(_deltaR1_sinus,jt) / _deltaR1_sinus[jt]);
+            yLesionUnitless.append((1.-protocolPars.Hct) * _deltaR1_lesion[jt] / _deltaR1_sinus[jt]);
+            yContraUnitLess.append((1.-protocolPars.Hct) * _deltaR1_contra[jt] / _deltaR1_sinus[jt]);
+            FUNC_INFO << "integrateR1_sinus[" << jt << "] =" << integrate(_deltaR1_sinus,jt);
         }
     }
-    FUNC_INFO << "lesion" << xTime << yLesionUnitless;
-    FUNC_INFO << "contra" << xTime << yContraUnitLess;
+    FUNC_INFO << "xTime" << xTime;
+    FUNC_INFO << "yLesionUnitless" << yLesionUnitless;
+    FUNC_INFO << "yContraUnitLess" << yContraUnitLess;
 
     if ( _checkBoxLesion->isChecked() )
     {
@@ -468,6 +490,8 @@ void MainWindow::addKTransPlot()
         _plotKTrans->setData(xTime, fit);
         _plotKTrans->setColor(Qt::blue);  // lesion
         _plotKTrans->setLineThickness(2);
+        _kTransOffsetLesion->setText(QString("lesion offset: %1").arg(poly.getBeta(0)));
+        _kTransSlopeLesion->setText(QString("lesion Ki: %1").arg(poly.getBeta(1)));
     }
 
     if ( _checkBoxContra->isChecked() )
@@ -487,6 +511,7 @@ void MainWindow::addKTransPlot()
         _plotKTrans->setData(xTime, fit);
         _plotKTrans->setColor(Qt::black);  // lesion
         _plotKTrans->setLineThickness(2);
+        _kTransSlopeContra->setText(QString("contra Ki*1000: %1").arg(poly.getBeta(1)*1000.));
     }
 
     _plotKTrans->conclude(0,true);
@@ -514,9 +539,41 @@ dVector MainWindow::computeDeltaR1(int iColumn)
     normalizeToFirstPoint(yCorrected);
     // Convert from normalized signal to delta_R1
     dVector DR1; DR1.resize(yCorrected.size());
+    FUNC_INFO << "correction" << _temporaryR1 << protocolPars.TRGado;
+    FUNC_INFO << "correction" << ( 1. + qExp(_temporaryR1 * protocolPars.TRGado) ) / _temporaryR1;
     for (int jt=0; jt<nTime; jt++)
-        DR1[jt] = yCorrected[jt] * ( 1. * qExp(_temporaryR1 * protocolPars.TRGado) ) / protocolPars.TRGado;
+        DR1[jt] = (yCorrected[jt]-1.) * ( 1. + qExp(_temporaryR1 * protocolPars.TRGado) ) / _temporaryR1;
     return DR1;
+}
+
+dVector MainWindow::fitKi(dVector dR1Tissue, dVector dR1Sinus)
+{
+    // DR1_tiss = Ki/(1-Hct) * int_R1 + vd/(1-Hct) * R1
+    dVector integraldR1Sinus;
+    dVector weights;
+    int lowCutoff=1;
+    for (int jt=0; jt<dR1Tissue.size(); jt++)
+    {
+        integraldR1Sinus.append(integrate(dR1Tissue,jt));
+        if ( jt > lowCutoff )
+//            weights.append(SQR(dR1Tissue.at(jt)));
+            weights.append(1.);
+        else
+            weights.append(0.);
+    }
+    FUNC_INFO << "integraldR1Sinus" << integraldR1Sinus;
+    GeneralGLM fitter;
+    fitter.init(dR1Tissue.size(),0);           // ntime, ncoeff
+//    fitter.setOLS();                           // set weights to 1
+    fitter.setWeights(weights);
+    fitter.addBasisFunction(dR1Sinus);         // basis function "0" --> offset
+    fitter.addBasisFunction(integraldR1Sinus); // basis function "1" --> ki
+    fitter.fitWLS(dR1Tissue,true);
+    dVector fit = fitter.getFitAll();
+    double off = fitter.getBeta(0) * (1.-protocolPars.Hct);
+    double ki  = fitter.getBeta(1) * (1.-protocolPars.Hct);
+    qInfo() << "*** ki, off ***" << ki << off;
+    return fit;
 }
 
 double MainWindow::integrate(dVector vector, int iTime)
@@ -526,4 +583,13 @@ double MainWindow::integrate(dVector vector, int iTime)
     for (int jt=0; jt<=iTime; jt++)
         sum += vector.at(jt) * dt;
     return sum;
+}
+
+void MainWindow::fitVariableTR(int iColumn)
+{
+    // Signal model assuming 90 degree flip: S(TR) = S0 * (1 - exp(-TR*R1))
+    double S0Guess = 1.5 * _tableVTR[iColumn].last();  // a bit bigger than the long TR signal
+    double T1Guess = 2500.;
+    double R1Guess = 1./T1Guess;
+
 }

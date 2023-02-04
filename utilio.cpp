@@ -139,7 +139,7 @@ namespace utilIO
     }
 
     QString readTimeTableFile(QString fileName, QStringList &columnNames, dMatrix &table)
-    {   // read a file with headers (columnNames) follwed by table entries: table[nRows][nColumns]
+    {   // read a file with headers (columnNames) follwed by table entries: table[nColumns][nRows]
         QFile file(fileName);
         if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         {
@@ -148,24 +148,13 @@ namespace utilIO
         }
         QTextStream inputStream(&file);
         QString line = inputStream.readLine(); // headers
-
-        // Find the number of entries
-        int nLines=0;
-        while ( !inputStream.atEnd() )
-        {
-            QString line = inputStream.readLine();
-            nLines++;
-        }
-        inputStream.seek(0);
-        table.resize(nLines);
-
-        line = inputStream.readLine();
         QString unCommented = line.left(line.indexOf("#"));
         QRegExp rx("[,\\s]");// match a comma or a space
         columnNames = unCommented.split(rx, QString::SkipEmptyParts);
         int nColumns = columnNames.size();
-        for (int jt=0; jt<table.size(); jt++)
-            table[jt].clear();
+        table.resize(nColumns);
+        for (int jColumn=0; jColumn<table.size(); jColumn++)
+            table[jColumn].clear();
 
         int iTime = 0;
         while ( !inputStream.atEnd() )
@@ -191,7 +180,7 @@ namespace utilIO
                             bool ok;
                             double value = valueString.toDouble(&ok);
                             if ( ok )
-                                table[iTime].append(value);
+                                table[jColumn].append(value);
                         } // jColumn
                     } // < nColumns
                 } // valueSize != 0

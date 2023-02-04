@@ -130,6 +130,7 @@ struct OVLFile
     bool loaded=false;
 };
 typedef QVector<OVLFile> ovlVector;
+typedef struct {QVector<double> x, y, fit; QString name;} GraphVector;
 
 struct basisFunction
 {

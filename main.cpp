@@ -9,7 +9,5 @@ int main(int argc, char *argv[])
     // read command line, import data, initial analysis
     win.readCommandLine();
 
-    win.show();
-
     return app.exec();
 }

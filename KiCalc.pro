@@ -1,6 +1,6 @@
 QT += core gui concurrent widgets printsupport
 
-#DEFINES += QT_NO_DEBUG_OUTPUT
+DEFINES += QT_NO_DEBUG_OUTPUT
 
 #CONFIG += c++11 console
 #CONFIG -= app_bundle

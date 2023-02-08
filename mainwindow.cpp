@@ -26,12 +26,21 @@ void MainWindow::calculateKi()
     _lesionDR1.fit = fitKi(_lesionDR1,_sinusDR1,kiLesion,offsetLesion);
     _contraDR1.fit = fitKi(_contraDR1,_sinusDR1,kiContra,offsetContra);
 
-    qInfo() << "Ki     values (1/min)" << kiLesion*60. << kiContra*60.;
-    qInfo() << "offset values" << offsetLesion << offsetContra;
-    if ( _inputOptions.batchMode )
+    if ( _inputOptions.returnLesion )
+    {
+        std::fprintf(stdout,"%g",kiLesion*60.);
         exit(0);
+    }
+    else if ( _inputOptions.returnContra )
+    {
+        std::fprintf(stdout,"%g",kiContra*60.);
+        exit(0);
+    }
     else
     {
+        qInfo() << "Ki     values (1/min)" << kiLesion*60. << kiContra*60.;
+        qInfo() << "offset values" << offsetLesion << offsetContra;
+
         // update R1 values in the GUI
         QString number;  number.setNum(1./R1Lesion,'g',2);
         _T1LesionLabel->setText(QString("T1 lesion: %1").arg(number));
@@ -210,6 +219,8 @@ MainWindow::MainWindow()
     _statusBar = this->statusBar();
     _statusBar->setStyleSheet("color:Darkred");
     mainLayout->addWidget(_statusBar);
+    QToolBar *graphToolBar = createGraphToolBar();
+    addToolBar(Qt::LeftToolBarArea, graphToolBar);
 
     // add a menu
     auto *menuBar = new QMenuBar;
@@ -223,6 +234,9 @@ MainWindow::MainWindow()
     // short-cuts and tooltips
     quitAction->setShortcut(Qt::ControlModifier + Qt::Key_Q);
     connect(quitAction, &QAction::triggered, this, &MainWindow::exitApp);
+
+    QAction *startupHelpAct  = helpMenu->addAction(tr("Startup options"));
+    connect(startupHelpAct,  &QAction::triggered, this, &MainWindow::aboutStartup);
 }
 
 QHBoxLayout *MainWindow::createTopLayout()
@@ -284,10 +298,13 @@ QHBoxLayout *MainWindow::createMiddleLayout()
     T1Box->setStyleSheet("background-color:lightYellow;");
 
     _includeCorrected = new QCheckBox("corrected S(t)");
+    _showLegends      = new QCheckBox("legends");
     connect(_includeCorrected, SIGNAL(clicked(bool)), this, SLOT(updateGraphs()));
+    connect(_showLegends, SIGNAL(clicked(bool)), this, SLOT(showLegends(bool)));
 
     auto *corrLayout = new QHBoxLayout();
     corrLayout->addWidget(_includeCorrected);
+    corrLayout->addWidget(_showLegends);
     auto *corrBox = new QGroupBox();
     corrBox->setLayout(corrLayout);
     corrBox->setStyleSheet("background-color:lightYellow;");
@@ -368,10 +385,112 @@ QWidget *MainWindow::createBottomPlotDuo()
     return plotWidget;
 }
 
+QToolBar *MainWindow::createGraphToolBar()
+{
+    const QIcon *dragX = new QIcon(":/MyIcons/dragX.png");
+    _dragXAction = new QAction(*dragX, tr("drag/zoom X axis"), this);
+    const QIcon *dragY = new QIcon(":/MyIcons/dragY.png");
+    _dragYAction = new QAction(*dragY, tr("drag/zoom Y axis"), this);
+    const QIcon *crossIcon = new QIcon(":/MyIcons/cursor-cross.png");
+    _crossCursorAct = new QAction(*crossIcon, tr("Select time points"), this);
+    const QIcon *rescaleXY = new QIcon(":/MyIcons/rescaleGraph.png");
+    _rescaleXYAction = new QAction(*rescaleXY, tr("Auto-scale X and Y ranges"), this);
+    _rescaleXYAction->setCheckable(true);
+    _rescaleXYAction->setChecked(true);
+    QActionGroup *dragGroup = new QActionGroup(this);
+    dragGroup->addAction(_dragXAction);
+    dragGroup->addAction(_dragYAction);
+    dragGroup->addAction(_crossCursorAct);
+    _dragXAction->setCheckable(true);
+    _dragYAction->setCheckable(true);
+    _crossCursorAct->setCheckable(true);
+    _crossCursorAct->setChecked(true);
+    connect(_dragXAction,      SIGNAL(triggered(bool)), this, SLOT(setXZoom()));
+    connect(_dragYAction,      SIGNAL(triggered(bool)), this, SLOT(setYZoom()));
+    connect(_crossCursorAct,   SIGNAL(triggered(bool)), this, SLOT(setSelectPoints(bool)));
+    connect(_crossCursorAct,   SIGNAL(triggered(bool)), this, SLOT(setSelectPoints(bool)));
+    connect(_rescaleXYAction,  SIGNAL(triggered(bool)), this, SLOT(autoScale(bool)));
+    QToolBar *graphToolBar = new QToolBar("graph tool bar");
+    graphToolBar->addAction(_dragXAction);
+    graphToolBar->addAction(_dragYAction);
+    graphToolBar->addAction(_crossCursorAct);
+    graphToolBar->addAction(_rescaleXYAction);
+
+    graphToolBar->setSizePolicy(QSizePolicy::Fixed,QSizePolicy::Fixed);
+    graphToolBar->setOrientation(Qt::Horizontal);
+
+    return graphToolBar;
+}
 void MainWindow::exitApp()
 {
 //    writeQSettings();
     QCoreApplication::exit(0);
+}
+
+void MainWindow::aboutStartup()
+{
+    FUNC_INFO << _inputOptions.startupText;
+
+    QString outputString = _inputOptions.startupText;
+
+    QMessageBox::warning(0, QGuiApplication::applicationDisplayName(),
+                          "<html><head/><body><pre>"
+                          + outputString + "</pre></body></html>");
+}
+
+void MainWindow::setXZoom()
+{
+    _plotVariableTr->setXZoom();
+    _plotEchoes->setXZoom();
+    _plotDeltaR1->setXZoom();
+    _plotKTrans->setXZoom();
+    _rescaleXYAction->setChecked(false);
+}
+void MainWindow::setYZoom()
+{
+    _plotVariableTr->setYZoom();
+    _plotEchoes->setYZoom();
+    _plotDeltaR1->setYZoom();
+    _plotKTrans->setYZoom();
+    _rescaleXYAction->setChecked(false);
+}
+void MainWindow::setSelectPoints(bool state)
+{
+    _plotVariableTr->setSelectPoints(state);
+    _plotEchoes->setSelectPoints(state);
+    _plotDeltaR1->setSelectPoints(state);
+    _plotKTrans->setSelectPoints(state);
+}
+void MainWindow::autoScale(bool state)
+{
+    _plotVariableTr->autoScale(state);
+    _plotEchoes->autoScale(state);
+    _plotDeltaR1->autoScale(state);
+    _plotKTrans->autoScale(state);
+    _dragXAction->setChecked(false);
+    _dragYAction->setChecked(false);
+    _crossCursorAct->setChecked(true);
+    _plotVariableTr->setSelectPoints(true);
+    _plotEchoes->setSelectPoints(true);
+    _plotDeltaR1->setSelectPoints(true);
+    _plotKTrans->setSelectPoints(true);
+}
+void MainWindow::showLegends(bool state)
+{
+    if ( state )
+    {
+        _plotVariableTr->showLegend();
+        _plotEchoes->showLegend();
+        _plotDeltaR1->showLegend();
+        _plotKTrans->showLegend();
+    }
+    else
+    {
+        _plotVariableTr->hideLegend();
+        _plotEchoes->hideLegend();
+        _plotDeltaR1->hideLegend();
+        _plotKTrans->hideLegend();
+    }
 }
 
 void MainWindow::readCommandLine()
@@ -396,46 +515,35 @@ CommandLineParseResult MainWindow::parseCommandLine(QStringList commandLine)
 {
     FUNC_ENTER << commandLine;
     QCommandLineParser parser;
-    QString HelpText = "\nDisplay images (usually 4D) and analyze time series.\n";
-    HelpText.append("Syntax:  fastmap [file1] [file2] [...]\n\n");
+    QString HelpText = "\nCalculate Ki values for several ROIs using table files.\n";
+    HelpText.append("Syntax:  exe [Variable-TR table] [short-TE table] [long TE-table] [optional args]\n\n");
     HelpText.append("where\n\n");
-    HelpText.append("Files are NIFTI or JIP format and optional arguments include:");
+    HelpText.append("tables have 1 header line (x lesion contra sinus) followed by time points");
     parser.setApplicationDescription(HelpText);
 
     parser.setSingleDashWordOptionMode(QCommandLineParser::ParseAsLongOptions);
 
-    const QCommandLineOption batchOption({"b","batch"}, "Suppress GUI");
-    parser.addOption(batchOption);  // should add auto-calculate and auto-quit by default
+    const QCommandLineOption lesionOption({"l","lesion"}, "Suppress GUI; return lesion ki");
+    parser.addOption(lesionOption);
+    const QCommandLineOption contraOption({"c","contra"}, "Suppress GUI; return contra ki");
+    parser.addOption(contraOption);
 
-    parser.addPositionalArgument("[file1] [file2] ...", "A series of files for a time series.");
+    parser.addPositionalArgument("[table 1] [table 2] ...", "A series of tables.");
 
     const QCommandLineOption helpOption = parser.addHelpOption();
 
+    bool success = parser.parse(commandLine);
+    if ( !success || parser.isSet(helpOption))
+        QTextStream(stdout) << parser.helpText();
+    if ( !success ) return CommandLineError;
+
     int numberArguments = commandLine.count();
     if ( numberArguments < 4 )   // executable [VTR file] [shortTE file] [longTE file]
-            return CommandLineError;
-    else
-    {
-        if (!parser.parse(commandLine))
-        {
-            QString outputString = reformatStartupHelpText(parser.helpText());
-            QMessageBox::warning(nullptr, QGuiApplication::applicationDisplayName(),
-                                 "<html><head/><body><h2>" + parser.errorText() + "</h2><pre>"
-                                             + outputString + "</pre></body></html>");
-            return CommandLineError;
-        }
-    }
+        return CommandLineError;
+    _inputOptions.startupText = parser.helpText();
 
-    if (parser.isSet(helpOption))
-    {
-        QMessageBox::warning(nullptr, QGuiApplication::applicationDisplayName(),
-                             "<html><head/><body><pre>"
-                             + parser.helpText() + "</pre></body></html>");
-        return CommandLineHelpRequested;
-    }
-
-    if ( parser.isSet(batchOption) )
-        _inputOptions.batchMode = true;
+    if ( parser.isSet(lesionOption) ) _inputOptions.returnLesion = true;
+    if ( parser.isSet(contraOption) ) _inputOptions.returnContra = true;
 
     // positional arguments: [variable TR table] [gado short TE] [gado long TE]
     if ( parser.positionalArguments().size() < 2 ) return CommandLineError;
@@ -444,32 +552,6 @@ CommandLineParseResult MainWindow::parseCommandLine(QStringList commandLine)
     _inputOptions.gadoLongTEFileName  = parser.positionalArguments().at(2);
 
     return CommandLineOk;
-}
-
-
-QString MainWindow::reformatStartupHelpText(QString inputText)
-{
-    FUNC_ENTER << inputText;
-    QString outputString;
-    QRegExp rx("[\r\n]");// match a comma or a space
-    QStringList inputList = inputText.split(rx, QString::SkipEmptyParts);
-    outputString = inputList.at(0);
-    for (int jList=1; jList<inputList.size(); jList++)
-    {
-        QString newLine = inputList.at(jList);
-        QRegExp rx("[,\\s]");// match a comma or a space
-        QStringList lineList = newLine.split(rx, QString::SkipEmptyParts);
-        QChar firstChar = lineList.at(0)[0];
-        if ( firstChar == '-' )
-            outputString = outputString + "\n" + newLine; // terminate last line; add new line
-        else
-        {
-            for (int jLineList=0; jLineList<lineList.size(); jLineList++)
-                outputString = outputString + " " + lineList.at(jLineList);
-        }
-    }
-    outputString = outputString + "\n"; // terminate last line
-    return outputString;
 }
 
 void MainWindow::readDataFiles()
@@ -692,7 +774,7 @@ void MainWindow::updateKTransPlot()
         poly.define(2,xTime);
         poly.fitWLS(yLesionUnitless,true);
         dVector fit = poly.getFitAll();
-        _plotKTrans->addCurve(0,"fit");
+        _plotKTrans->addCurve(0,_lesionDR1.name+"_fit");
         _plotKTrans->setData(xTime, fit);
         _plotKTrans->setColor(Qt::blue);  // lesion
         _plotKTrans->setLineThickness(2);
@@ -714,7 +796,7 @@ void MainWindow::updateKTransPlot()
         poly.define(2,xTime);
         poly.fitWLS(yContraUnitLess,true);
         dVector fit = poly.getFitAll();
-        _plotKTrans->addCurve(0,"fit");
+        _plotKTrans->addCurve(0,_contraDR1.name+"_fit");
         _plotKTrans->setData(xTime, fit);
         _plotKTrans->setColor(Qt::black);  // lesion
         _plotKTrans->setLineThickness(2);

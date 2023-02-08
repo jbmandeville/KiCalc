@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/">
+        <file>MyIcons/cursor-cross.png</file>
+        <file>MyIcons/dragX.png</file>
+        <file>MyIcons/dragY.png</file>
+        <file>MyIcons/rescaleGraph.png</file>
+    </qresource>
+</RCC>

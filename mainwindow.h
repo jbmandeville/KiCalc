@@ -6,7 +6,6 @@
 #include <QCoreApplication>
 #include "plot.h"
 #include "io.h"
-//#include "qcustomplot.h"
 
 struct fixedParameters
 {
@@ -22,7 +21,9 @@ struct CommandOptions
     QString variableTRFileName;  // positional argument 1
     QString gadoShortTEFileName; // positional argument 2
     QString gadoLongTEFileName;  // positional argument 3
-    bool batchMode=false;        // -b
+    QString startupText;         // help
+    bool returnLesion=false;     // suppress GUI; return lesion Ki in stdout
+    bool returnContra=false;     // suppress GUI; return contra Ki in stdout
 };
 enum CommandLineParseResult
 {
@@ -44,6 +45,7 @@ private:
     QRadioButton *_radioRaw;
     QRadioButton *_radioNorm;
     QCheckBox *_includeCorrected;
+    QCheckBox *_showLegends;
 
     plotData *_plotVariableTr;
     plotData *_plotEchoes;
@@ -59,6 +61,11 @@ private:
     QLabel *_kTransOffsetLesionLabel;
     QLabel *_kTransLesionLabel;
     QLabel *_kTransContraLabel;
+
+    QAction *_dragXAction;
+    QAction *_dragYAction;
+    QAction *_crossCursorAct;
+    QAction *_rescaleXYAction;
 
     CommandOptions _inputOptions;
     fixedParameters protocolPars;
@@ -90,9 +97,9 @@ private:
     QHBoxLayout *createMiddleLayout();
     QWidget     *createBottomPlotDuo();
     QHBoxLayout *createBottomLayout();
+    QToolBar    *createGraphToolBar();
 
     CommandLineParseResult parseCommandLine(QStringList commandLine);
-    QString reformatStartupHelpText(QString inputText);
     void readDataFiles();
     void reformatData();
     void reformatDataVector(dMatrix table, QStringList columnNames, int iColumn, GraphVector &vector);
@@ -115,10 +122,15 @@ public:
 
 public slots:
     void updateGraphs();
+    void setXZoom();
+    void setYZoom();
+    void autoScale(bool state);
+    void setSelectPoints(bool state);
+    void showLegends(bool state);
 
 private slots:
     void exitApp();
-
+    void aboutStartup();
 };
 
 #endif // MAINWINDOW_H

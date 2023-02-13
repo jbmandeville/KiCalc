@@ -142,7 +142,7 @@ double MainWindow::fitVariableTR(GraphVector &dataVector, int iLevel)
     if ( iLevel == 1 )
     {
         _S0Iterate = 1.5 * dataVector.y[nTime-1];  // a bit bigger than the long TR signal
-        _R1Iterate = 0.35;
+        _R1Iterate = 0.2;
     }
     FUNC_INFO << " " << _S0Iterate << _R1Iterate;
     double S0Width = _S0Iterate / qPow(2,iLevel);  // 2^7>100 should be enough
@@ -164,7 +164,7 @@ double MainWindow::fitVariableTR(GraphVector &dataVector, int iLevel)
     _R1Iterate = R1Start;
     dVector bestPars = {_S0Iterate, _R1Iterate};
     double bestSOS = 1.e20;
-    FUNC_INFO << "_S0Iterate S0Start S0Stop S0Step" << _S0Iterate << S0Start << S0Stop << S0Step;
+    FUNC_INFO << "S0Start S0Stop S0Step" << S0Start << S0Stop << S0Step;
     while (_S0Iterate <= S0Stop)
     {
         while (_R1Iterate <= R1Stop)
@@ -175,7 +175,7 @@ double MainWindow::fitVariableTR(GraphVector &dataVector, int iLevel)
             for ( int jt=0; jt<nTime; jt++ )
             {
                 double TR = dataVector.x[jt]/1000.;
-//                FUNC_INFO << "TR[" << jt << "] =" << TR << "value" << _S0Iterate * ( 1. - qExp(-_R1Iterate * TR) );
+                FUNC_INFO << "TR[" << jt << "] =" << TR << "value" << _S0Iterate * ( 1. - qExp(-_R1Iterate * TR) );
                 fit[jt] = _S0Iterate * ( 1. - qExp(-_R1Iterate * TR) );
                 sos += SQR(dataVector.y[jt]-fit[jt]);
             }
@@ -195,7 +195,7 @@ double MainWindow::fitVariableTR(GraphVector &dataVector, int iLevel)
 
     _S0Iterate = bestPars.at(0);
     _R1Iterate = bestPars.at(1);
-    FUNC_INFO << "bestPars" << bestPars;
+    FUNC_EXIT << "bestPars" << bestPars;
     return _R1Iterate;
 }
 
@@ -746,7 +746,7 @@ void MainWindow::updateKTransPlot()
 
     dVector xTime, yLesionUnitless, yContraUnitLess;
     int nTime = _lesionDR1.y.size();
-    int lowCutoff=1;
+    int lowCutoff=2;
     FUNC_INFO << "_sinusDR1.y" << _sinusDR1.y;
     for (int jt=0; jt<nTime; jt++)
     {
